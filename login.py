@@ -3,8 +3,8 @@ from bs4 import BeautifulSoup
 import yfinance as yf
 from config import LOGIN_URL, ORDER_URL, LOGIN_SUCCESS_TEXT, LOGIN_DATA, ORDER_DATA, STOCK_DATA_URL
 
-def login(session, url, data):
-    """ログインを試みる"""
+def login(session: requests.Session, url: str, data: dict) -> bool:
+    """ログインを試み、成功すればTrueを返します。"""
     response = session.post(url, data=data)
     if LOGIN_SUCCESS_TEXT in response.text:
         print("ログイン成功")
@@ -13,17 +13,16 @@ def login(session, url, data):
         print("ログイン失敗")
         return False
 
-def send_order(session, url, data):
-    """注文を送信する"""
+def send_order(session: requests.Session, url: str, data: dict) -> None:
+    """注文を送信します。"""
     response = session.post(url, data=data)
     if response.status_code == 200:
         print("注文送信成功")
     else:
         print("注文送信失敗")
-        
-def get_stock_data(session):
-    """株を持っているかどうかを取得する"""
-    
+
+def get_stock_data(session: requests.Session) -> tuple[bool, list]:
+    """株の保有状況を取得し、保有している場合はデータを返します。"""
     response = session.get(STOCK_DATA_URL)
     soup = BeautifulSoup(response.text, 'html.parser')
     divs = soup.find_all('div', class_='table_wrapper')
@@ -43,8 +42,8 @@ def get_stock_data(session):
     
     return bool(data), data
 
-def get_total_assets(session):
-    """資産合計を取得する"""
+def get_total_assets(session: requests.Session) -> int | None:
+    """資産合計を取得し、取得できない場合はNoneを返します。"""
     response = session.get('https://www.ssg.ne.jp/performances/team')
     soup = BeautifulSoup(response.text, 'html.parser')
     temo_stock_div = soup.find('div', id='temoStock')
@@ -59,11 +58,12 @@ def get_total_assets(session):
                     cols = second_row.find_all('td')
                     if cols:
                         total_assets = cols[0].text.strip().replace(',', '')
-                        return total_assets
+                        return int(total_assets)
     print("資産合計が見つかりませんでした")
     return None
 
-def get_land_stock_price():
+def get_land_stock_price() -> float | None:
+    """ランド社の株価を取得し、取得できない場合はNoneを返します。"""
     stock = yf.Ticker("8918.T")  # ランドの銘柄コード
     hist = stock.history(period="1d")
     if not hist.empty:
@@ -72,7 +72,8 @@ def get_land_stock_price():
         print("ランドの株価が取得できませんでした")
         return None
 
-def main():
+def main() -> None:
+    """メイン処理を行います。"""
     session = requests.Session()
     if login(session, LOGIN_URL, LOGIN_DATA):
         has_stock, stock_data = get_stock_data(session)
@@ -90,14 +91,13 @@ def main():
             print(f"ランドの株を買える数: {num_shares * 100}株")
             
             ORDER_DATA['order_01[ticker_symbol]'] = '8918'
-            ORDER_DATA['order_01[volume]'] = str(num_shares * 100)
+            ORDER_DATA['order_01[volume]'] = str(num_shares * 100)[:-2]
             ORDER_DATA['order_01[selling]'] = 'false'
             
             print("ランド買います")
         else:
             print("注文条件を満たさないため注文を送信しませんでした")
             return
-        print(ORDER_DATA)
         send_order(session, ORDER_URL, ORDER_DATA)
 
 if __name__ == "__main__":
