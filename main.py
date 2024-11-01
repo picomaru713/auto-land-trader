@@ -4,6 +4,39 @@ import yfinance as yf
 from config import url, login_data
 
 session = requests.Session()
+buy_data = {
+    "limit":"",
+    "order_01[ticker_symbol]":"",
+    "order_01[volume]":"", 
+    "order_01[selling]": None,
+    "order_02[ticker_symbol]":"", 
+    "order_02[volume]":"",
+    "order_02[selling]": None,
+    "order_03[ticker_symbol]":"", 
+    "order_03[volume]":"", 
+    "order_03[selling]": None,
+    "order_04[ticker_symbol]":"", 
+    "order_04[volume]":"", 
+    "order_04[selling]": None,
+    "order_05[ticker_symbol]":"", 
+    "order_05[volume]":"", 
+    "order_05[selling]": None,
+    "order_06[ticker_symbol]":"", 
+    "order_06[volume]":"", 
+    "order_06[selling]": None,
+    "order_07[ticker_symbol]":"", 
+    "order_07[volume]":"", 
+    "order_07[selling]": None,
+    "order_08[ticker_symbol]":"", 
+    "order_08[volume]":"",
+    "order_08[selling]": None,
+    "order_09[ticker_symbol]":"", 
+    "order_09[volume]":"", 
+    "order_09[selling]": None,
+    "order_10[ticker_symbol]":"",
+    "order_10[volume]":"",
+    "order_10[selling]": None
+}
 
 def login():
     response = session.post(url, data=login_data)
@@ -70,15 +103,23 @@ total_assets = get_total_assets()
 #print(f"資産合計: {total_assets}")
 
 if land_stock_price == 7.0 and not has_stock_data:
-    print("buy")
+    print("購入します")
     if total_assets is not None:
         total_assets = int(total_assets)
         num_shares = total_assets // (land_stock_price * 100)
         print(f"ランドの株を買える数: {num_shares * 100}株")
+        buy_data["order_01[ticker_symbol]"] = "8918.T"
+        buy_data["order_01[volume]"] = str(num_shares * 100)
+        buy_data["order_01[selling]"] = "false"
+        session.post("https://www.ssg.ne.jp/orders/form", data=buy_data)
     else:
         print("資産合計が取得できなかったため、ランドの株を買える数を計算できませんでした")
 elif land_stock_price == 8.0 and has_stock_data:
-    print("sell")
+    print("売ります")
+    buy_data["order_01[ticker_symbol]"] = "8918.T"
+    buy_data["order_01[volume]"] = data[0][2]
+    buy_data["order_01[selling]"] = "true"
+    session.post("https://www.ssg.ne.jp/orders/form", data=buy_data)
     print("ランドの保有数: {}".format(data[0][2]))
 else:
     print("do nothing")
