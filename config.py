@@ -1,5 +1,3 @@
-import os
-
 # 定数
 LOGIN_URL = 'https://www.ssg.ne.jp/session'
 ORDER_URL = 'https://www.ssg.ne.jp/orders/bulk'
