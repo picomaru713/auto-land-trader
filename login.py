@@ -78,13 +78,13 @@ def main() -> None:
     if login(session, LOGIN_URL, LOGIN_DATA):
         has_stock, stock_data = get_stock_data(session)
         land_stock_price = get_land_stock_price()
-        if has_stock and land_stock_price == 8.0:
+        if has_stock and land_stock_price == 9.0:
             ORDER_DATA['order_01[ticker_symbol]'] = '8918'
             ORDER_DATA['order_01[volume]'] = stock_data[0][2]
             ORDER_DATA['order_01[selling]'] = 'true'
             
             print("ランド売ります")
-        elif not has_stock and land_stock_price == 7.0:
+        elif not has_stock and land_stock_price == 8.0:
             total_assets = int(get_total_assets(session))
             num_shares = total_assets // (land_stock_price * 100)
             
