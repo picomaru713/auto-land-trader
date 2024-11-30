@@ -3,102 +3,71 @@ from bs4 import BeautifulSoup
 import yfinance as yf
 from config import LOGIN_URL, ORDER_URL, LOGIN_SUCCESS_TEXT, LOGIN_DATA, ORDER_DATA, STOCK_DATA_URL
 
-def login(session: requests.Session, url: str, data: dict) -> bool:
-    """ログインを試み、成功すればTrueを返します。"""
-    response = session.post(url, data=data)
-    if LOGIN_SUCCESS_TEXT in response.text:
+def login_and_create_session() -> requests.Session | None:
+    """ログインしてセッションを作成します。成功すればセッションを返します。"""
+    session = requests.Session()
+    if LOGIN_SUCCESS_TEXT in session.post(LOGIN_URL, data=LOGIN_DATA).text:
         print("ログイン成功")
-        return True
-    else:
-        print("ログイン失敗")
-        return False
+        return session
+    print("ログイン失敗")
+    return None
 
-def send_order(session: requests.Session, url: str, data: dict) -> None:
+def fetch_stock_data(session: requests.Session) -> tuple[list, int]:
+    """保有株データと資産合計を取得します。"""
+    stock_data_response = session.get(STOCK_DATA_URL)
+    soup = BeautifulSoup(stock_data_response.text, 'html.parser')
+    stock_table = soup.find_all('div', class_='table_wrapper')[1].find('table', class_='Dealings sp_layout')
+    stock_data = [
+        [col.text.strip().replace(',', '') for col in row.find_all('td')]
+        for row in stock_table.find_all('tr')[1:]  # ヘッダーを除く
+    ] if stock_table else []
+
+    total_assets_response = session.get('https://www.ssg.ne.jp/performances/team')
+    total_assets_div = BeautifulSoup(total_assets_response.text, 'html.parser').find('div', id='temoStock')
+    total_assets = int(total_assets_div.find('table').find('tbody').find_all('tr')[1].find_all('td')[0].text.replace(',', '')) if total_assets_div else 0
+
+    return stock_data, total_assets
+
+def fetch_land_stock_price() -> float | None:
+    """ランド社の株価を取得します。"""
+    stock = yf.Ticker("8918.T")
+    hist = stock.history(period="1d")
+    return hist['Close'].iloc[0] if not hist.empty else None
+
+def place_order(session: requests.Session, ticker: str, volume: int, selling: bool) -> None:
     """注文を送信します。"""
-    response = session.post(url, data=data)
-    if response.status_code == 200:
+    ORDER_DATA.update({
+        'order_01[ticker_symbol]': ticker,
+        'order_01[volume]': str(volume),
+        'order_01[selling]': 'true' if selling else 'false'
+    })
+    if session.post(ORDER_URL, data=ORDER_DATA).status_code == 200:
         print("注文送信成功")
     else:
         print("注文送信失敗")
 
-def get_stock_data(session: requests.Session) -> tuple[bool, list]:
-    """株の保有状況を取得し、保有している場合はデータを返します。"""
-    response = session.get(STOCK_DATA_URL)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    divs = soup.find_all('div', class_='table_wrapper')
-    
-    if len(divs) < 2:
-        print("2番目のdivが見つかりませんでした")
-        return False, []
-    
-    second_div = divs[1]
-    table = second_div.find('table', class_='Dealings sp_layout')
-    rows = table.find_all('tr')[1:]  # ヘッダー行をスキップ
-    
-    data = [
-        [col.text.strip().replace(',', '') for col in row.find_all('td')]
-        for row in rows
-    ]
-    
-    return bool(data), data
-
-def get_total_assets(session: requests.Session) -> int | None:
-    """資産合計を取得し、取得できない場合はNoneを返します。"""
-    response = session.get('https://www.ssg.ne.jp/performances/team')
-    soup = BeautifulSoup(response.text, 'html.parser')
-    temo_stock_div = soup.find('div', id='temoStock')
-    if temo_stock_div:
-        table = temo_stock_div.find('table')
-        if table:
-            tbody = table.find('tbody')
-            if tbody:
-                rows = tbody.find_all('tr')
-                if len(rows) >= 2:
-                    second_row = rows[1]
-                    cols = second_row.find_all('td')
-                    if cols:
-                        total_assets = cols[0].text.strip().replace(',', '')
-                        return int(total_assets)
-    print("資産合計が見つかりませんでした")
-    return None
-
-def get_land_stock_price() -> float | None:
-    """ランド社の株価を取得し、取得できない場合はNoneを返します。"""
-    stock = yf.Ticker("8918.T")  # ランドの銘柄コード
-    hist = stock.history(period="1d")
-    if not hist.empty:
-        return hist['Close'].iloc[0]
-    else:
-        print("ランドの株価が取得できませんでした")
-        return None
-
 def main() -> None:
     """メイン処理を行います。"""
-    session = requests.Session()
-    if login(session, LOGIN_URL, LOGIN_DATA):
-        has_stock, stock_data = get_stock_data(session)
-        land_stock_price = get_land_stock_price()
-        if has_stock and land_stock_price == 9.0:
-            ORDER_DATA['order_01[ticker_symbol]'] = '8918'
-            ORDER_DATA['order_01[volume]'] = stock_data[0][2]
-            ORDER_DATA['order_01[selling]'] = 'true'
-            
-            print("ランド売ります")
-        elif not has_stock and land_stock_price == 8.0:
-            total_assets = int(get_total_assets(session))
-            num_shares = total_assets // (land_stock_price * 100)
-            
-            print(f"ランドの株を買える数: {num_shares * 100}株")
-            
-            ORDER_DATA['order_01[ticker_symbol]'] = '8918'
-            ORDER_DATA['order_01[volume]'] = str(num_shares * 100)[:-2]
-            ORDER_DATA['order_01[selling]'] = 'false'
-            
-            print("ランド買います")
-        else:
-            print("注文条件を満たさないため注文を送信しませんでした")
-            return
-        send_order(session, ORDER_URL, ORDER_DATA)
+    session = login_and_create_session()
+    if not session:
+        return
+
+    stock_data, total_assets = fetch_stock_data(session)
+    land_stock_price = fetch_land_stock_price()
+
+    if not land_stock_price:
+        print("ランドの株価が取得できませんでした")
+        return
+
+    if stock_data and land_stock_price == 9.0:
+        print("ランド売ります")
+        place_order(session, '8918', int(stock_data[0][2]), True)
+    elif not stock_data and land_stock_price == 8.0:
+        num_shares = total_assets // (land_stock_price * 100)
+        print(f"ランドの株を買える数: {num_shares * 100}株")
+        place_order(session, '8918', num_shares * 100, False)
+    else:
+        print("注文条件を満たさないため注文を送信しませんでした")
 
 if __name__ == "__main__":
     main()
