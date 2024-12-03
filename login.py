@@ -2,6 +2,20 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
+from datetime import datetime, timedelta, timezone
+
+# 日本時間用のタイムゾーン設定
+JST = timezone(timedelta(hours=9))
+
+# 日本時間のフォーマッタを作成
+class JSTFormatter(logging.Formatter):
+    """ログのタイムスタンプを日本時間に変更するフォーマッタ"""
+    def formatTime(self, record, datefmt=None):
+        record_time = datetime.fromtimestamp(record.created, JST)
+        if datefmt:
+            return record_time.strftime(datefmt)
+        else:
+            return record_time.strftime('%Y-%m-%d %H:%M:%S')
 
 # ログ設定
 LOG_FILE = "trading_log.txt"
@@ -14,6 +28,10 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# 日本時間フォーマッタを適用
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(JSTFormatter('[%(asctime)s] %(message)s'))
 
 # 定数
 LOGIN_URL = 'https://www.ssg.ne.jp/session'
@@ -98,14 +116,17 @@ def place_order(session: requests.Session, ticker: str, volume: int, selling: bo
     logging.info(f"ランドの株を{action}します: 銘柄コード={ticker}, 数量={volume}")
     ORDER_DATA.update({
         'order_01[ticker_symbol]': ticker,
-        'order_01[volume]': str(volume),
+        'order_01[volume]': str(int(volume)),  # 小数点を整数に変換
         'order_01[selling]': 'true' if selling else 'false'
     })
+    logging.info(f"送信する注文データ: {ORDER_DATA}")  # 送信データをログに出力
     response = session.post(ORDER_URL, data=ORDER_DATA)
     if response.status_code == 200:
         logging.info("注文送信成功")
+        logging.info(f"レスポンス内容: {response.text}")  # レスポンス内容をログに出力
     else:
         logging.error(f"注文送信失敗: ステータスコード={response.status_code}")
+        logging.error(f"レスポンス内容: {response.text}")
 
 # メイン関数
 def main() -> None:
@@ -142,7 +163,7 @@ def main() -> None:
     elif not stock_data and close_price == low_price:
         num_shares = total_assets // (low_price * 100)
         logging.info(f"株価が安値にあります。新たに{num_shares * 100}株購入します。")
-        place_order(session, '8918', num_shares * 100, False)
+        place_order(session, '8918', int(num_shares * 100), False)
     elif stock_data and close_price == low_price:
         logging.info("株価は安値のままですが、すでに保有しているため購入を見送ります。")
     elif not stock_data and close_price > low_price:
