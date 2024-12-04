@@ -2,7 +2,7 @@ name: Daily Stock Order
 
 on:
   schedule:
-    - cron: '30 6 * * *'  # UTC時間で7時は日本時間の16時
+    - cron: '* 7 * * *'  # UTC時間で7時は日本時間の16時
 
 jobs:
   run-script:
