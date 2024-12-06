@@ -3,13 +3,12 @@ import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
+import os
+import json
 
-# 日本時間用のタイムゾーン設定
 JST = timezone(timedelta(hours=9))
 
-# 日本時間のフォーマッタを作成
 class JSTFormatter(logging.Formatter):
-    """ログのタイムスタンプを日本時間に変更するフォーマッタ"""
     def formatTime(self, record, datefmt=None):
         record_time = datetime.fromtimestamp(record.created, JST)
         if datefmt:
@@ -17,7 +16,6 @@ class JSTFormatter(logging.Formatter):
         else:
             return record_time.strftime('%Y-%m-%d %H:%M:%S')
 
-# ログ設定
 LOG_FILE = "trading_log.txt"
 logging.basicConfig(
     level=logging.INFO,
@@ -29,11 +27,17 @@ logging.basicConfig(
     ]
 )
 
-# 日本時間フォーマッタを適用
 for handler in logging.getLogger().handlers:
     handler.setFormatter(JSTFormatter('[%(asctime)s] %(message)s'))
 
-# 定数
+# 環境変数からJSON文字列を取得
+credentials_json = os.environ.get('USERS_CREDENTIALS', '{}')
+data = json.loads(credentials_json)
+USERS = data.get('users', [])
+
+# 以下、USERSを使ってループすることで、ユーザーが何人増えても同じコードで処理できる
+# USERSは [{'course_code':..., 'course_password':..., 'user_code':..., 'user_password':...}, {...}] というリスト形式
+
 LOGIN_URL = 'https://www.ssg.ne.jp/session'
 ORDER_URL = 'https://www.ssg.ne.jp/orders/bulk'
 LOGIN_SUCCESS_TEXT = (
@@ -42,7 +46,6 @@ LOGIN_SUCCESS_TEXT = (
 )
 STOCK_DATA_URL = 'https://www.ssg.ne.jp/performances/team'
 
-# 注文データ（初期化用）
 BASE_ORDER_DATA = {'limit': ''}
 for i in range(1, 11):
     BASE_ORDER_DATA.update({
@@ -51,13 +54,10 @@ for i in range(1, 11):
         f'order_{i:02}[selling]': 'null'
     })
 
-# ログの区切り線を追加する関数
 def log_divider():
     logging.info("=" * 55)
 
-# ログイン関数
 def login_and_create_session(login_data: dict) -> requests.Session | None:
-    """ログインしてセッションを作成します。成功すればセッションを返します。"""
     session = requests.Session()
     response = session.post(LOGIN_URL, data=login_data)
     if LOGIN_SUCCESS_TEXT in response.text:
@@ -66,16 +66,14 @@ def login_and_create_session(login_data: dict) -> requests.Session | None:
     logging.error("ログイン失敗")
     return None
 
-# 株式データ取得関数
 def fetch_stock_data(session: requests.Session) -> tuple[list, int]:
-    """保有株データと資産合計を取得します。"""
     logging.info("株式データを取得しています...")
     stock_data_response = session.get(STOCK_DATA_URL)
     soup = BeautifulSoup(stock_data_response.text, 'html.parser')
     stock_table = soup.find_all('div', class_='table_wrapper')[1].find('table', class_='Dealings sp_layout')
     stock_data = [
         [col.text.strip().replace(',', '') for col in row.find_all('td')]
-        for row in stock_table.find_all('tr')[1:]  # ヘッダーを除く
+        for row in stock_table.find_all('tr')[1:]
     ] if stock_table else []
     logging.info(f"保有株データ: {stock_data}")
 
@@ -86,9 +84,7 @@ def fetch_stock_data(session: requests.Session) -> tuple[list, int]:
 
     return stock_data, total_assets
 
-# 株価データ取得関数
 def fetch_land_stock_data() -> tuple[float, float] | None:
-    """ランド社の株価（終値と安値）を取得します。"""
     logging.info("ランド社の株価を取得しています...")
     stock = yf.Ticker("8918.T")
     hist = stock.history(period="1d")
@@ -100,27 +96,24 @@ def fetch_land_stock_data() -> tuple[float, float] | None:
     logging.error("ランドの株価が取得できませんでした")
     return None
 
-# 注文送信関数
 def place_order(session: requests.Session, ticker: str, volume: int, selling: bool) -> None:
-    """注文を送信します。"""
     action = "売却" if selling else "購入"
     logging.info(f"ランドの株を{action}します: 銘柄コード={ticker}, 数量={volume}")
     ORDER_DATA = BASE_ORDER_DATA.copy()
     ORDER_DATA.update({
         'order_01[ticker_symbol]': ticker,
-        'order_01[volume]': str(int(volume)),  # 小数点を整数に変換
+        'order_01[volume]': str(int(volume)),
         'order_01[selling]': 'true' if selling else 'false'
     })
-    logging.info(f"送信する注文データ: {ORDER_DATA}")  # 送信データをログに出力
+    logging.info(f"送信する注文データ: {ORDER_DATA}")
     response = session.post(ORDER_URL, data=ORDER_DATA)
     if response.status_code == 200:
         logging.info("注文送信成功")
-        logging.info(f"レスポンス内容: {response.text}")  # レスポンス内容をログに出力
+        logging.info(f"レスポンス内容: {response.text}")
     else:
         logging.error(f"注文送信失敗: ステータスコード={response.status_code}")
         logging.error(f"レスポンス内容: {response.text}")
 
-# 1人分のメイン処理関数
 def run_single_user(login_data: dict) -> None:
     log_divider()
     logging.info("プログラム開始")
@@ -148,7 +141,6 @@ def run_single_user(login_data: dict) -> None:
     logging.info(f"  - 終値: {close_price}円")
     logging.info(f"  - 安値: {low_price}円")
 
-    # 以下、既存ロジックを変更せず実行
     if stock_data and close_price > low_price:
         logging.info("株価が上昇しています。保有株を売却します。")
         place_order(session, '8918', int(stock_data[0][2]), True)
@@ -166,24 +158,9 @@ def run_single_user(login_data: dict) -> None:
     logging.info("プログラム終了")
     log_divider()
 
-# 複数ユーザーのログイン情報
-USERS = [
-    {
-        'course_code': "57226",
-        'course_password': "480362",
-        'user_code': "0307",
-        'user_password': "577163",
-        'button': ''
-    }
-]
-
-# メイン関数
 def main() -> None:
-    """複数ユーザーに対して自動売買を実行します。"""
     for user_data in USERS:
-        # 各ユーザーごとに既存の機能をそのまま利用
         run_single_user(user_data)
 
-# 実行エントリポイント
 if __name__ == "__main__":
     main()
