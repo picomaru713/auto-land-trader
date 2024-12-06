@@ -42,19 +42,10 @@ LOGIN_SUCCESS_TEXT = (
 )
 STOCK_DATA_URL = 'https://www.ssg.ne.jp/performances/team'
 
-# ログインデータ
-LOGIN_DATA = {
-    'course_code': "57226",
-    'course_password': "480362",
-    'user_code': "0307",
-    'user_password': "577163",
-    'button': ''
-}
-
-# 注文データ
-ORDER_DATA = {'limit': ''}
+# 注文データ（初期化用）
+BASE_ORDER_DATA = {'limit': ''}
 for i in range(1, 11):
-    ORDER_DATA.update({
+    BASE_ORDER_DATA.update({
         f'order_{i:02}[ticker_symbol]': '',
         f'order_{i:02}[volume]': '',
         f'order_{i:02}[selling]': 'null'
@@ -65,10 +56,10 @@ def log_divider():
     logging.info("=" * 55)
 
 # ログイン関数
-def login_and_create_session() -> requests.Session | None:
+def login_and_create_session(login_data: dict) -> requests.Session | None:
     """ログインしてセッションを作成します。成功すればセッションを返します。"""
     session = requests.Session()
-    response = session.post(LOGIN_URL, data=LOGIN_DATA)
+    response = session.post(LOGIN_URL, data=login_data)
     if LOGIN_SUCCESS_TEXT in response.text:
         logging.info("ログイン成功")
         return session
@@ -114,6 +105,7 @@ def place_order(session: requests.Session, ticker: str, volume: int, selling: bo
     """注文を送信します。"""
     action = "売却" if selling else "購入"
     logging.info(f"ランドの株を{action}します: 銘柄コード={ticker}, 数量={volume}")
+    ORDER_DATA = BASE_ORDER_DATA.copy()
     ORDER_DATA.update({
         'order_01[ticker_symbol]': ticker,
         'order_01[volume]': str(int(volume)),  # 小数点を整数に変換
@@ -128,12 +120,11 @@ def place_order(session: requests.Session, ticker: str, volume: int, selling: bo
         logging.error(f"注文送信失敗: ステータスコード={response.status_code}")
         logging.error(f"レスポンス内容: {response.text}")
 
-# メイン関数
-def main() -> None:
-    """メイン処理を行います。"""
+# 1人分のメイン処理関数
+def run_single_user(login_data: dict) -> None:
     log_divider()
     logging.info("プログラム開始")
-    session = login_and_create_session()
+    session = login_and_create_session(login_data)
     if not session:
         logging.error("セッションが作成できなかったため終了します")
         log_divider()
@@ -157,6 +148,7 @@ def main() -> None:
     logging.info(f"  - 終値: {close_price}円")
     logging.info(f"  - 安値: {low_price}円")
 
+    # 以下、既存ロジックを変更せず実行
     if stock_data and close_price > low_price:
         logging.info("株価が上昇しています。保有株を売却します。")
         place_order(session, '8918', int(stock_data[0][2]), True)
@@ -173,6 +165,24 @@ def main() -> None:
 
     logging.info("プログラム終了")
     log_divider()
+
+# 複数ユーザーのログイン情報
+USERS = [
+    {
+        'course_code': "57226",
+        'course_password': "480362",
+        'user_code': "0307",
+        'user_password': "577163",
+        'button': ''
+    }
+]
+
+# メイン関数
+def main() -> None:
+    """複数ユーザーに対して自動売買を実行します。"""
+    for user_data in USERS:
+        # 各ユーザーごとに既存の機能をそのまま利用
+        run_single_user(user_data)
 
 # 実行エントリポイント
 if __name__ == "__main__":
