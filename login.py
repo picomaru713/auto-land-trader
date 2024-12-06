@@ -163,4 +163,5 @@ def main() -> None:
         run_single_user(user_data)
 
 if __name__ == "__main__":
+    print("プログラムを開始します")
     main()
